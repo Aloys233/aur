@@ -1,0 +1,20 @@
+[
+  {
+    "name": "gonavi-bin",
+    "dir": "gonavi-bin",
+    "aur_name": "gonavi-bin",
+    "upstream": "Syngnat/GoNavi"
+  },
+  {
+    "name": "otomusic-bin",
+    "dir": "otomusic-bin",
+    "aur_name": "otomusic-bin",
+    "upstream": "Aloys233/OtoMusic"
+  },
+  {
+    "name": "quickflare",
+    "dir": "quickflare",
+    "aur_name": "quickflare-bin",
+    "upstream": "Aloys233/quickflare"
+  }
+]

@@ -1,0 +1,85 @@
+name: Check and Update AUR Packages
+
+on:
+  schedule:
+    # 每天 UTC 0:00 和 12:00（北京时间 8:00 和 20:00）自动检查更新
+    - cron: '0 0,12 * * *'
+  workflow_dispatch:
+    inputs:
+      target_pkg:
+        description: '选择要更新的包（all 表示检查所有包）'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - gonavi-bin
+          - otomusic-bin
+          - quickflare
+      push_aur:
+        description: '是否推送到 AUR'
+        required: true
+        default: true
+        type: boolean
+  repository_dispatch:
+    types: [update-aur]
+
+permissions:
+  contents: write
+
+jobs:
+  update-aur:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: 安装基础工具
+        run: |
+          pacman -Syu --noconfirm git openssh curl jq sudo pacman-contrib rsync
+
+      - name: 配置非 root 构建用户
+        run: |
+          useradd -m builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+
+      - name: 检出仓库代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 配置 SSH 私钥与权限
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          mkdir -p /home/builder/.ssh
+          echo "$AUR_KEY" > /home/builder/.ssh/aur
+          chmod 600 /home/builder/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> /home/builder/.ssh/known_hosts
+          chown -R builder:builder /home/builder/.ssh
+          
+          # 信任当前工作区安全目录并修正文件归属
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: 执行检查与更新
+        env:
+          TARGET_PKG: ${{ inputs.target_pkg || github.event.client_payload.target_pkg || 'all' }}
+          PUSH_AUR: ${{ inputs.push_aur != false }}
+        run: |
+          sudo -E -u builder bash -c '
+            export GIT_SSH_COMMAND="ssh -i /home/builder/.ssh/aur -o StrictHostKeyChecking=accept-new"
+            ./.github/scripts/check-and-update.sh "$TARGET_PKG"
+          '
+
+      - name: 将 PKGBUILD 更新同步推送到 GitHub 仓库
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(aur): auto update package definitions [skip ci]"
+            git push
+            echo "🎉 已将更新后的 PKGBUILD 与 .SRCINFO 同步提交到 GitHub 仓库！"
+          else
+            echo "✨ 仓库文件未发生变化，无需推送提交。"
+          fi
