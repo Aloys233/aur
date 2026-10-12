@@ -76,6 +76,9 @@ for ((i=0; i<count; i++)); do
     fi
     cd "$ROOT_DIR"
 
+    # 清理包目录下可能遗留的源码压缩包
+    rm -f "${pkg_dir}"/*.tar.* "${pkg_dir}"/*.tar "${pkg_dir}"/*.gz "${pkg_dir}"/*.xz "${pkg_dir}"/*.zst "${pkg_dir}"/*.part "${pkg_dir}"/*.zip
+
     total_updated=$((total_updated + 1))
 
     # 如果开启了 AUR 推送
@@ -87,16 +90,32 @@ for ((i=0; i<count; i++)); do
         aur_url="ssh://aur@aur.archlinux.org/${aur_name}.git"
         echo "正在克隆 $aur_url ..."
         if git clone "$aur_url" "$tmp_aur"; then
-            # 拷贝文件，排除 update.sh 等
-            rsync -av --exclude="update.sh" --exclude=".*" --exclude="*.bak" "${pkg_dir}/" "$tmp_aur/" 2>/dev/null || {
-                cp "${pkg_dir}/PKGBUILD" "$tmp_aur/"
-                cp "${pkg_dir}/.SRCINFO" "$tmp_aur/"
-                for extra in "${pkg_dir}"/*.svg "${pkg_dir}"/*.desktop "${pkg_dir}"/*.png "${pkg_dir}"/*.install; do
-                    if [ -f "$extra" ]; then
-                        cp "$extra" "$tmp_aur/"
-                    fi
-                done
-            }
+            # 1. 复制必需的 PKGBUILD 与 .SRCINFO
+            cp -f "${pkg_dir}/PKGBUILD" "$tmp_aur/"
+            if [ -f "${pkg_dir}/.SRCINFO" ]; then
+                cp -f "${pkg_dir}/.SRCINFO" "$tmp_aur/"
+            fi
+
+            # 2. 复制辅助小文件（例如小图标、desktop 文件、补丁等），严禁复制大型源码包
+            for extra in "${pkg_dir}"/*; do
+                [ -f "$extra" ] || continue
+                fname=$(basename "$extra")
+                case "$fname" in
+                    update.sh|*.sh|*.tar.*|*.tar|*.gz|*.xz|*.zst|*.zip|*.deb|*.rpm|PKGBUILD|.SRCINFO)
+                        continue
+                        ;;
+                    *)
+                        # 单文件必须小于 400KB（AUR 上限为 500KB）
+                        fsize=$(stat -c%s "$extra" 2>/dev/null || echo 0)
+                        if [ "$fsize" -lt 409600 ]; then
+                            echo "📄 同步辅助文件: $fname (${fsize} 字节)"
+                            cp -f "$extra" "$tmp_aur/"
+                        else
+                            echo "⚠️ 跳过超大文件: $fname (${fsize} 字节)"
+                        fi
+                        ;;
+                esac
+            done
 
             cd "$tmp_aur"
             git config user.name "Aloys23"

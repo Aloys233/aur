@@ -38,6 +38,9 @@ updpkgsums
 echo "⚙️ 正在生成 .SRCINFO 文件 ..."
 makepkg --printsrcinfo > .SRCINFO
 
+# 清理 updpkgsums 下载到本地的源码压缩包与临时文件
+rm -f GoNavi-*.tar.gz *.part
+
 if [ "$PUSH" -eq 1 ]; then
     echo "📦 正在提交到 AUR 仓库 ..."
     git add PKGBUILD .SRCINFO
